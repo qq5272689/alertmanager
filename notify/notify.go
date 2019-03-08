@@ -15,6 +15,7 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
@@ -545,11 +546,12 @@ func (n *DedupStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	resolvedSet := map[uint64]struct{}{}
 	firing := []uint64{}
 	resolved := []uint64{}
+	alerts_map := make(map[uint64]*types.Alert)
 
 	var hash uint64
 	for _, a := range alerts {
 		hash = n.hash(a)
-		a.Fingerprint()
+		alerts_map[hash] = a
 		if a.Resolved() {
 			resolved = append(resolved, hash)
 			resolvedSet[hash] = struct{}{}
@@ -572,6 +574,32 @@ func (n *DedupStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	case 1:
 
 		entry = entries[0]
+
+		new_firing := []uint64{}
+		new_resolved := []uint64{}
+		new_alerts := []*types.Alert{}
+		for rh, _ := range resolvedSet {
+			if !entry.IsResolvedSubset(map[uint64]struct{}{rh: struct{}{}}) {
+				new_alerts = append(new_alerts, alerts_map[rh])
+				new_resolved = append(resolved, rh)
+			}
+		}
+		for fh, _ := range firingSet {
+			if !entry.IsFiringSubset(map[uint64]struct{}{fh: struct{}{}}) {
+				new_alerts = append(new_alerts, alerts_map[fh])
+				new_firing = append(firing, fh)
+			}
+		}
+
+		if len(new_alerts) != len(alerts) {
+			alerts_b, _ := json.Marshal(alerts)
+			new_alerts_b, _ := json.Marshal(new_alerts)
+			level.Warn(l).Log("msg", "alerts is changed!!!", "old_alerts", string(alerts_b), "new_alerts", string(new_alerts_b))
+			alerts = new_alerts
+			firing = new_firing
+			resolved = new_resolved
+		}
+
 		//eb, _ := json.Marshal(entry)
 		//fmt.Println("entries:", string(eb), entry.FiringAlerts, entry.ResolvedAlerts)
 		//fmt.Println("alerts:", alerts)
@@ -623,7 +651,10 @@ func (r RetryStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 	} else {
 		sent = alerts
 	}
-
+	if len(sent) == 0 {
+		return ctx, alerts, nil
+	}
+	//sent=alerts
 	var (
 		i    = 0
 		b    = backoff.NewExponentialBackOff()
