@@ -72,7 +72,7 @@ func NewRoute(cr *config.Route, parent *Route) *Route {
 	}
 
 	opts.GroupByAll = cr.GroupByAll
-
+	opts.RepeatWaitResolve = cr.RepeatWaitResolve
 	if cr.GroupWait != nil {
 		opts.GroupWait = time.Duration(*cr.GroupWait)
 	}
@@ -164,7 +164,8 @@ type RouteOpts struct {
 
 	// Use all alert labels to group.
 	GroupByAll bool
-
+	//
+	RepeatWaitResolve bool
 	// How long to wait to group matching alerts before sending
 	// a notification.
 	GroupWait      time.Duration
@@ -177,25 +178,27 @@ func (ro *RouteOpts) String() string {
 	for ln := range ro.GroupBy {
 		labels = append(labels, ln)
 	}
-	return fmt.Sprintf("<RouteOpts send_to:%q group_by:%q group_by_all:%t timers:%q|%q>",
-		ro.Receiver, labels, ro.GroupByAll, ro.GroupWait, ro.GroupInterval)
+	return fmt.Sprintf("<RouteOpts send_to:%q group_by:%q group_by_all:%t timers:%q repeat_wait_resolve:%t|%q>",
+		ro.Receiver, labels, ro.GroupByAll, ro.GroupWait, ro.RepeatWaitResolve, ro.GroupInterval)
 }
 
 // MarshalJSON returns a JSON representation of the routing options.
 func (ro *RouteOpts) MarshalJSON() ([]byte, error) {
 	v := struct {
-		Receiver       string           `json:"receiver"`
-		GroupBy        model.LabelNames `json:"groupBy"`
-		GroupByAll     bool             `json:"groupByAll"`
-		GroupWait      time.Duration    `json:"groupWait"`
-		GroupInterval  time.Duration    `json:"groupInterval"`
-		RepeatInterval time.Duration    `json:"repeatInterval"`
+		Receiver          string           `json:"receiver"`
+		GroupBy           model.LabelNames `json:"groupBy"`
+		GroupByAll        bool             `json:"groupByAll"`
+		GroupWait         time.Duration    `json:"groupWait"`
+		GroupInterval     time.Duration    `json:"groupInterval"`
+		RepeatInterval    time.Duration    `json:"repeatInterval"`
+		RepeatWaitResolve bool             `json:"repeatWaitResolve"`
 	}{
-		Receiver:       ro.Receiver,
-		GroupByAll:     ro.GroupByAll,
-		GroupWait:      ro.GroupWait,
-		GroupInterval:  ro.GroupInterval,
-		RepeatInterval: ro.RepeatInterval,
+		Receiver:          ro.Receiver,
+		GroupByAll:        ro.GroupByAll,
+		GroupWait:         ro.GroupWait,
+		GroupInterval:     ro.GroupInterval,
+		RepeatInterval:    ro.RepeatInterval,
+		RepeatWaitResolve: ro.RepeatWaitResolve,
 	}
 	for ln := range ro.GroupBy {
 		v.GroupBy = append(v.GroupBy, ln)

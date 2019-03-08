@@ -15,6 +15,7 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
@@ -107,6 +108,7 @@ type notifyKey int
 const (
 	keyReceiverName notifyKey = iota
 	keyRepeatInterval
+	KeyRepeatWaitResolve
 	keyGroupLabels
 	keyGroupKey
 	keyFiringAlerts
@@ -147,6 +149,18 @@ func WithNow(ctx context.Context, t time.Time) context.Context {
 // WithRepeatInterval populates a context with a repeat interval.
 func WithRepeatInterval(ctx context.Context, t time.Duration) context.Context {
 	return context.WithValue(ctx, keyRepeatInterval, t)
+}
+
+func WithRepeatWaitResolve(ctx context.Context, r bool) context.Context {
+	return context.WithValue(ctx, KeyRepeatWaitResolve, r)
+}
+
+func RepeatWaitResolve(ctx context.Context) bool {
+	v, ok := ctx.Value(KeyRepeatWaitResolve).(bool)
+	if ok {
+		return v
+	}
+	return false
 }
 
 // RepeatInterval extracts a repeat interval from the context. Iff none exists, the
@@ -473,7 +487,7 @@ func hashAlert(a *types.Alert) uint64 {
 	return hash
 }
 
-func (n *DedupStage) needsUpdate(entry *nflogpb.Entry, firing, resolved map[uint64]struct{}, repeat time.Duration) bool {
+func (n *DedupStage) needsUpdate(entry *nflogpb.Entry, firing, resolved map[uint64]struct{}, repeat time.Duration, repeatWaitResolve bool) bool {
 	// If we haven't notified about the alert group before, notify right away
 	// unless we only have resolved alerts.
 	if entry == nil {
@@ -483,7 +497,7 @@ func (n *DedupStage) needsUpdate(entry *nflogpb.Entry, firing, resolved map[uint
 	if !entry.IsFiringSubset(firing) {
 		return true
 	}
-
+	//fmt.Println("entry.IsFiringSubset(firing)",entry.IsFiringSubset(firing),"entry.IsResolvedSubset(firing):",entry.IsResolvedSubset(firing),"my test:",!entry.IsFiringSubset(firing)&&!entry.IsResolvedSubset(firing))
 	// Notify about all alerts being resolved.
 	// This is done irrespective of the send_resolved flag to make sure that
 	// the firing alerts are cleared from the notification log.
@@ -500,7 +514,19 @@ func (n *DedupStage) needsUpdate(entry *nflogpb.Entry, firing, resolved map[uint
 	}
 
 	// Nothing changed, only notify if the repeat interval has passed.
-	return entry.Timestamp.Before(n.now().Add(-repeat))
+	is_passed := entry.Timestamp.Before(n.now().Add(-repeat))
+	if repeatWaitResolve {
+		is_in_Resolved := entry.IsResolvedSubset(firing)
+		if is_passed && is_in_Resolved {
+			return true
+		} else {
+			return false
+		}
+	} else {
+		return is_passed
+	}
+
+	//return entry.Timestamp.Before(n.now().Add(-repeat))
 }
 
 // Exec implements the Stage interface.
@@ -514,6 +540,7 @@ func (n *DedupStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	if !ok {
 		return ctx, nil, fmt.Errorf("repeat interval missing")
 	}
+	repeatWaitResolve := RepeatWaitResolve(ctx)
 
 	firingSet := map[uint64]struct{}{}
 	resolvedSet := map[uint64]struct{}{}
@@ -534,21 +561,25 @@ func (n *DedupStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 
 	ctx = WithFiringAlerts(ctx, firing)
 	ctx = WithResolvedAlerts(ctx, resolved)
-
 	entries, err := n.nflog.Query(nflog.QGroupKey(gkey), nflog.QReceiver(n.recv))
-
 	if err != nil && err != nflog.ErrNotFound {
 		return ctx, nil, err
 	}
+	fmt.Println("ctx:", ctx)
 	var entry *nflogpb.Entry
 	switch len(entries) {
 	case 0:
 	case 1:
+
 		entry = entries[0]
+		eb, _ := json.Marshal(entry)
+		fmt.Println("entries:", string(eb), entry.FiringAlerts, entry.ResolvedAlerts)
+		fmt.Println("alerts:", alerts)
+
 	case 2:
 		return ctx, nil, fmt.Errorf("unexpected entry result size %d", len(entries))
 	}
-	if n.needsUpdate(entry, firingSet, resolvedSet, repeatInterval) {
+	if n.needsUpdate(entry, firingSet, resolvedSet, repeatInterval, repeatWaitResolve) {
 		return ctx, alerts, nil
 	}
 	return ctx, nil, nil

@@ -274,7 +274,7 @@ func (ag *aggrGroup) run(nf notifyFunc) {
 			ctx = notify.WithGroupLabels(ctx, ag.labels)
 			ctx = notify.WithReceiverName(ctx, ag.opts.Receiver)
 			ctx = notify.WithRepeatInterval(ctx, ag.opts.RepeatInterval)
-
+			ctx = notify.WithRepeatWaitResolve(ctx, ag.opts.RepeatWaitResolve)
 			// Wait the configured interval before calling flush again.
 			ag.mtx.Lock()
 			ag.next.Reset(ag.opts.GroupInterval)

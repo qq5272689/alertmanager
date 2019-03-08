@@ -537,9 +537,10 @@ type Route struct {
 	Continue bool              `yaml:"continue,omitempty" json:"continue,omitempty"`
 	Routes   []*Route          `yaml:"routes,omitempty" json:"routes,omitempty"`
 
-	GroupWait      *model.Duration `yaml:"group_wait,omitempty" json:"group_wait,omitempty"`
-	GroupInterval  *model.Duration `yaml:"group_interval,omitempty" json:"group_interval,omitempty"`
-	RepeatInterval *model.Duration `yaml:"repeat_interval,omitempty" json:"repeat_interval,omitempty"`
+	GroupWait         *model.Duration `yaml:"group_wait,omitempty" json:"group_wait,omitempty"`
+	GroupInterval     *model.Duration `yaml:"group_interval,omitempty" json:"group_interval,omitempty"`
+	RepeatInterval    *model.Duration `yaml:"repeat_interval,omitempty" json:"repeat_interval,omitempty"`
+	RepeatWaitResolve bool            `yaml:"repeat_wait_resolve,omitempty" json:"repeat_wait_resolve,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for Route.
