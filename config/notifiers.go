@@ -29,6 +29,14 @@ var (
 		},
 	}
 
+	DefaultNsqLakersConfig = NsqLakersConfig{
+		NotifierConfig: NotifierConfig{
+			VSendResolved: true,
+		},
+		Topic: "AlertData",
+		Nsqds: []string{"127.0.0.1:4150"},
+	}
+
 	// DefaultEmailConfig defines default values for Email configurations.
 	DefaultEmailConfig = EmailConfig{
 		NotifierConfig: NotifierConfig{
@@ -146,6 +154,34 @@ type NotifierConfig struct {
 
 func (nc *NotifierConfig) SendResolved() bool {
 	return nc.VSendResolved
+}
+
+// EmailConfig configures notifications via mail.
+type NsqLakersConfig struct {
+	NotifierConfig `yaml:",inline" json:",inline"`
+
+	// Email address to notify.
+	Topic string   `yaml:"topic,omitempty" json:"topic,omitempty"`
+	Nsqds []string `yaml:"nsqs,omitempty" json:"nsqs,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *NsqLakersConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultNsqLakersConfig
+	type plain NsqLakersConfig
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+	if c.Topic == "" {
+		return fmt.Errorf("missing Topic in webhook config")
+	}
+	if c.Nsqds == nil {
+		return fmt.Errorf("missing Nsqds in webhook config")
+	}
+	if len(c.Nsqds) == 0 {
+		return fmt.Errorf("miss Nsqds(len) in webhook config")
+	}
+	return nil
 }
 
 // EmailConfig configures notifications via mail.

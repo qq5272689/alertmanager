@@ -21,8 +21,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bitly/go-simplejson"
+	"github.com/cespare/xxhash"
+	"github.com/nsqio/go-nsq"
 	"io"
 	"io/ioutil"
+	"math"
+	"math/rand"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -32,6 +37,7 @@ import (
 	"net/smtp"
 	"net/textproto"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,6 +91,10 @@ func BuildReceiverIntegrations(nc *config.Receiver, tmpl *template.Template, log
 	for i, c := range nc.WebhookConfigs {
 		n := NewWebhook(c, tmpl, logger)
 		add("webhook", i, n, c)
+	}
+	for i, c := range nc.NsqLakersConfig {
+		n := NewNsqLakers(c, tmpl, logger)
+		add("nsq_lakers", i, n, c)
 	}
 	for i, c := range nc.EmailConfigs {
 		n := NewEmail(c, tmpl, logger)
@@ -195,6 +205,115 @@ func (w *Webhook) retry(statusCode int) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// NsqLakers implements a Notifier for NsqLakers notifications.
+type NsqLakers struct {
+	conf   *config.NsqLakersConfig
+	tmpl   *template.Template
+	logger log.Logger
+}
+
+// NewNsqLakers returns a new NsqLakers notifier.
+func NewNsqLakers(c *config.NsqLakersConfig, t *template.Template, l log.Logger) *NsqLakers {
+	if c.Topic == "" {
+		c.Topic = config.DefaultNsqLakersConfig.Topic
+	}
+	if c.Nsqds == nil {
+		c.Nsqds = config.DefaultNsqLakersConfig.Nsqds
+	}
+	if len(c.Nsqds) == 0 {
+		c.Nsqds = config.DefaultNsqLakersConfig.Nsqds
+	}
+	return &NsqLakers{conf: c, tmpl: t, logger: l}
+}
+
+// get new nsq producer
+func (n *NsqLakers) newProducer() (*nsq.Producer, error) {
+	nsqaddr := n.conf.Nsqds[rand.Intn(len(n.conf.Nsqds))]
+	p, err := nsq.NewProducer(nsqaddr, nsq.NewConfig())
+	return p, err
+}
+
+// Notify implements the Notifier interface.
+func (n *NsqLakers) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	// We need to know the hostname for both auth and TLS.
+	p, err := n.newProducer()
+	if err != nil {
+		return false, fmt.Errorf("NsqLakers newProducer err: %v", err)
+	}
+
+	for _, a := range as {
+		n_data_json := simplejson.New()
+		if a.Resolved() {
+			n_data_json.Set("status", true)
+		} else {
+			n_data_json.Set("status", false)
+		}
+		if a.Annotations["title"] == "" {
+			level.Error(n.logger).Log("msg", "NsqLakers need key titile in Annotations", "alert", a.Annotations.String(), "title")
+			continue
+		}
+		n_data_json.Set("title", a.Annotations["title"])
+		if a.Annotations["content"] == "" {
+			level.Error(n.logger).Log("msg", "NsqLakers need key content in Annotations", "alert", a.Annotations.String())
+			continue
+		}
+		n_data_json.Set("content", a.Annotations["content"])
+		if a.Annotations["content"] == "" {
+			level.Error(n.logger).Log("msg", "NsqLakers need key content in Annotations", "alert", a.Annotations.String())
+			continue
+		}
+		n_data_json.Set("content", a.Annotations["content"])
+
+		if a.Annotations["host_name"] == "" {
+			level.Error(n.logger).Log("msg", "NsqLakers need key host_name in Annotations", "alert", a.Annotations.String())
+			continue
+		}
+		n_data_json.Set("host_name", a.Annotations["host_name"])
+		if a.Annotations["alert_source"] == "" {
+			level.Error(n.logger).Log("msg", "NsqLakers need key alert_source in Annotations", "alert", a.Annotations.String())
+			continue
+		}
+		alert_source, err := strconv.Atoi(string(a.Annotations["alert_source"]))
+		if err != nil {
+			level.Error(n.logger).Log("msg", "NsqLakers key alert_source in Annotations must is a number", "alert", a.Annotations.String())
+			continue
+		}
+		n_data_json.Set("alert_source", alert_source)
+		if a.Annotations["level"] == "" {
+			level.Error(n.logger).Log("msg", "NsqLakers need key level in Annotations", "alert", a.Annotations.String())
+			continue
+		}
+		alevel, err := strconv.Atoi(string(a.Annotations["level"]))
+		if err != nil {
+			level.Error(n.logger).Log("msg", "NsqLakers key level in Annotations must is a number", "alert", a.Annotations.String())
+			continue
+		}
+		n_data_json.Set("level", alevel)
+
+		n_data_json.Set("app_classify", a.Annotations["app_classify"])
+		n_data_json.Set("app_type", a.Annotations["app_type"])
+		n_data_json.Set("app_name", a.Annotations["app_name"])
+
+		n_data_data := a.Labels.Clone()
+		n_data_data = n_data_data.Merge(a.Annotations.Clone())
+		n_data_json.Set("data", n_data_data)
+
+		n_data_json.Set("trigger_id", int64(math.Abs(float64(a.Fingerprint())/2562975364026)))
+		hash_host_name := xxhash.Sum64String(hashKey(string(a.Annotations["host_name"])))
+		n_data_json.Set("host_id", int64(math.Abs(float64(hash_host_name)/2562975364026)))
+
+		d, _ := n_data_json.Encode()
+		err = p.Publish(n.conf.Topic, d)
+		if err != nil {
+			level.Error(n.logger).Log("msg", "NsqLakers publish fail!!! err:"+err.Error(), "alert", a.String())
+		} else {
+			level.Info(n.logger).Log("msg", "NsqLakers publish success!!!", "alert", a.String())
+		}
+	}
+
+	return true, nil
 }
 
 // Email implements a Notifier for email notifications.

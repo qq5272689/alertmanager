@@ -1,6 +1,7 @@
 module github.com/prometheus/alertmanager
 
 require (
+	github.com/bitly/go-simplejson v0.5.0
 	github.com/cenkalti/backoff v0.0.0-20181003080854-62661b46c409
 	github.com/cespare/xxhash v0.0.0-20181017004759-096ff4a8a059
 	github.com/go-kit/kit v0.8.0
@@ -12,12 +13,14 @@ require (
 	github.com/go-openapi/swag v0.17.2
 	github.com/go-openapi/validate v0.17.2
 	github.com/gogo/protobuf v1.2.1
+	github.com/golang/snappy v0.0.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.0
 	github.com/hashicorp/memberlist v0.1.3
 	github.com/jessevdk/go-flags v0.0.0-20180331124232-1c38ed7ad0cc
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/kylelemons/godebug v0.0.0-20160406211939-eadb3ce320cb
 	github.com/matttproud/golang_protobuf_extensions v1.0.1
+	github.com/nsqio/go-nsq v1.0.7
 	github.com/oklog/oklog v0.0.0-20170918173356-f857583a70c3
 	github.com/oklog/ulid v0.0.0-20170117200651-66bb6560562f
 	github.com/pkg/errors v0.8.0

@@ -15,7 +15,6 @@ package notify
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
@@ -550,6 +549,7 @@ func (n *DedupStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	var hash uint64
 	for _, a := range alerts {
 		hash = n.hash(a)
+		a.Fingerprint()
 		if a.Resolved() {
 			resolved = append(resolved, hash)
 			resolvedSet[hash] = struct{}{}
@@ -565,16 +565,16 @@ func (n *DedupStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	if err != nil && err != nflog.ErrNotFound {
 		return ctx, nil, err
 	}
-	fmt.Println("ctx:", ctx)
+	//fmt.Println("ctx:", ctx)
 	var entry *nflogpb.Entry
 	switch len(entries) {
 	case 0:
 	case 1:
 
 		entry = entries[0]
-		eb, _ := json.Marshal(entry)
-		fmt.Println("entries:", string(eb), entry.FiringAlerts, entry.ResolvedAlerts)
-		fmt.Println("alerts:", alerts)
+		//eb, _ := json.Marshal(entry)
+		//fmt.Println("entries:", string(eb), entry.FiringAlerts, entry.ResolvedAlerts)
+		//fmt.Println("alerts:", alerts)
 
 	case 2:
 		return ctx, nil, fmt.Errorf("unexpected entry result size %d", len(entries))
